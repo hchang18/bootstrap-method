@@ -1,0 +1,197 @@
+---
+title: "heart-logitReg-AllData"
+author: "Haeyoon Chang"
+date: "11/28/2020"
+output: pdf_document
+---
+
+LogitRegression for Selecting Features
+
+Description of parameters: 
+- age: age in years (29 - 77)
+- sex: 1 = male; 0 = female (0, 1)
+- cp: chest pain type (0, 1, 2, 3) 
+- trestbps: resting blood pressure (in mm Hg on admission to the hospital)
+- chol: serum cholesterol in mg/dl
+- fbs: fasting blood sugar > 120 mg / dl (1 = true, 0 = false)
+- restecg: resting electrocardiographic results (0, 1, 2)
+- thalach: maximum heart rate achieved
+- exang: exercise induced anigma (1 = yes; 0 = no)
+- oldpeak: ST depression induced by exercise relative to rest 
+- slope: the slope of the peak exercise ST segment
+- ca: number of major vessels colored by flourospy (0-3)
+- thal: 3 = normal; 6 = fixed defect; 7 = reversible defect 
+- target: presence of heart diseases in the patient (1 = yes, 0 = no)
+
+```{r}
+# import data 
+training.data.raw <- read.csv("heart.csv", header=T, na.strings=c(""))
+
+# detect if there's any na 
+# sapply(training.data.raw, function(x) sum(is.na(x)))
+
+# count how many unique values in each column
+sapply(training.data.raw, function(x) length(unique(x)))
+
+# select subset of the original dataset 
+data <- training.data.raw
+data <- transform(
+  data,
+  age=as.integer(age),
+  sex=as.factor(sex),
+  cp=as.factor(cp),
+  trestbps=as.integer(trestbps),
+  chol=as.integer(chol),
+  fbs=as.factor(fbs),
+  restecg=as.factor(restecg),
+  thalach=as.integer(thalach),
+  exang=as.factor(exang),
+  oldpeak=as.numeric(oldpeak),
+  slope=as.factor(slope),
+  # ca=as.factor(ca),
+  # thal=as.factor(thal),
+  target=as.factor(target)
+)
+# sapply(data, class)
+summary(data)
+```
+
+```{r}
+library(boot)
+
+
+
+# let's split the train and test data later...
+# shuffled <- data[sample(nrow(data)),]
+# train <- shuffled[1:228,]
+# test <- shuffled[229:303,]
+
+# model
+# set.seed(304)
+
+# data processed as continuous
+# logit <- glm(target ~ sex + cp + trestbps + thalach + exang + ca + thal, family=binomial(link='logit'), data=train)
+
+# all 14 variables included
+# logit <- glm(target ~., family=binomial(link='logit'), data=data)
+
+# data processed as discrete (categorical values)
+logit <- glm(target ~ sex + cp + trestbps + thalach + exang + ca + thal, family=binomial(link='logit'), data=data)
+
+summary(logit)
+coef = coef(logit)
+```
+
+```{r}
+R = 1000                 # number of bootstrap samples
+n = nrow(data)           # sample size
+k = length(coef(logit))   # number of coefficients
+
+# set up a empty R x n matrix B
+B = matrix(nrow = R, ncol = k, dimnames = list(paste("Sample", 1:R), names(coef(logit))))
+
+# loop R times
+# set.seed(111)
+for (i  in 1:R){
+  # sample credit data with replacement
+  boot.data = data[sample(x = 1:n, size = n, replace=TRUE),]
+  # fit the model on the bootstrapped sample
+  boot.logit = glm(logit$formula, data = boot.data, family = binomial(link = "logit"))
+  
+  # store the coefficients
+  if (length(coef(boot.logit)) == k){
+    B[i, ] = coef(boot.logit)
+  } else {
+    # when the # of coefficients calculated < spaces assigned in matrix
+    coef_len = length(coef(boot.logit))
+    for (j in 1:coef_len) {
+      B[i,j] = coef(boot.logit)[j]
+    }
+  }
+}
+```
+
+```{r}
+for (i in 1:k){
+  hist(B[,i], main = paste("Histogram of ", colnames(B)[i]))
+  print(mean(B[,i]))
+}
+```
+
+```{r}
+# calculate the p-value
+for (i in 1:k){
+  a = sum(B[,i] >= coef[i], na.rm=TRUE)/R
+  print(a)
+}
+# null hypothesis: theta == theta
+(a)
+```
+```{r}
+fitted.results <- predict(logit, newdata=data, type='response')
+fitted.results <- ifelse(fitted.results >0.5, 1, 0)
+pred = fitted.results
+actual = data$target
+result = data.frame(pred, actual)
+
+misClassificError <- mean(fitted.results != data$target)
+print(paste('Accuracy', 1 - misClassificError))
+```
+
+
+
+Validation of Model Prediction Accuracy
+```{r}
+library(ROCR)
+
+# score the same training data set on which the model was fit
+prob = predict.glm(logit, type = 'response', newdata = data)
+pred = prediction(prob, data$target)
+
+# AUC
+auc = performance(pred, "auc")@y.values[[1]][1]
+
+# plot the ROC curve
+perf <- performance(pred, "tpr", "fpr")
+plot(perf, col="navyblue", cex.main=1,
+     main= paste("Logistic Regression ROC Curve: AUC =", round(auc,3)))
+abline(a= 0, b = 1, col='darkorange1')
+```
+
+```{r}
+R = 100                # number of bootstrap samples
+n = nrow(data)         # sample size
+
+# empty R x 2 matrix for bootstrap results
+B = matrix(nrow=R, ncol = 2, dimnames = list(paste('Sample', 1:R), c("auc_orig", "auc_boot")))
+
+# set.seed(701)
+for(i in 1:R) {
+  
+  # sample target data with replacement
+  data.boot = data[sample(x = 1:n, size = n, replace=TRUE),]
+  
+  # fit the model on bootstrap sample
+  logit.boot = glm(logit$formula, data=data.boot, family=binomial(link ="logit"))
+  
+  # apply model to original data
+  prob1 = predict(logit.boot, type='response', data)
+  pred1 = prediction(prob1, data$target)
+  auc1 = performance(pred1, "auc")@y.values[[1]][1]
+  B[i, 1] = auc1
+  
+  # apply model to bootstrap data
+  prob2 = predict(logit.boot, type='response', data.boot)
+  pred2 = prediction(prob2, data.boot$target)
+  auc2 = performance(pred2, "auc")@y.values[[1]][1]
+  B[i, 2] = auc2
+}
+
+avg_insample_auc = sum(B[,1])/R
+avg_bootstrap_auc = sum(B[,2])/R
+
+(B)
+(avg_insample_auc)
+(avg_bootstrap_auc)
+```
+

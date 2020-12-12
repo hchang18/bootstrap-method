@@ -1,0 +1,136 @@
+---
+title: "heart-logitReg-train_test"
+author: "Haeyoon Chang"
+date: "11/28/2020"
+output: pdf_document
+---
+
+LogitRegression for Selecting Features
+
+Description of parameters: 
+- age: age in years (29 - 77)
+- sex: 1 = male; 0 = female (0, 1)
+- cp: chest pain type (0, 1, 2, 3) 
+- trestbps: resting blood pressure (in mm Hg on admission to the hospital)
+- chol: serum cholesterol in mg/dl
+- fbs: fasting blood sugar > 120 mg / dl (1 = true, 0 = false)
+- restecg: resting electrocardiographic results (0, 1, 2)
+- thalach: maximum heart rate achieved
+- exang: exercise induced anigma (1 = yes; 0 = no)
+- oldpeak: ST depression induced by exercise relative to rest 
+- slope: the slope of the peak exercise ST segment
+- ca: number of major vessels colored by flourospy (0-3)
+- thal: 3 = normal; 6 = fixed defect; 7 = reversible defect 
+- target: presence of heart diseases in the patient (1 = yes, 0 = no)
+
+```{r}
+# import data 
+training.data.raw <- read.csv("heart.csv", header=T, na.strings=c(""))
+
+# detect if there's any na 
+# sapply(training.data.raw, function(x) sum(is.na(x)))
+
+# count how many unique values in each column
+sapply(training.data.raw, function(x) length(unique(x)))
+
+# select subset of the original dataset 
+data <- training.data.raw
+data <- transform(
+  data,
+  age=as.integer(age),
+  sex=as.factor(sex),
+  cp=as.factor(cp),
+  trestbps=as.integer(trestbps),
+  chol=as.integer(chol),
+  fbs=as.factor(fbs),
+  restecg=as.factor(restecg),
+  thalach=as.integer(thalach),
+  exang=as.factor(exang),
+  oldpeak=as.numeric(oldpeak),
+  slope=as.factor(slope),
+  # ca=as.factor(ca),
+  # thal=as.factor(thal),
+  target=as.factor(target)
+)
+# sapply(data, class)
+summary(data)
+```
+
+```{r}
+library(boot)
+library(ROCR)
+
+# let's split the train and test data later...
+shuffled <- data[sample(nrow(data)),]
+# train <- shuffled[1:228,]
+# test <- shuffled[229:303,]
+
+# create 10 equally size folds
+k = 5
+folds <- cut(seq(1, nrow(data)), breaks=k, labels=FALSE)
+
+# empty R x 2 matrix for bootstrap results
+CV = matrix(nrow=k, ncol = 2, dimnames = list(paste('Sample', 1:k), c("auc_train", "auc_test")))
+
+for (i in 1:k) {
+  # segment the data by fold using the which() function
+  testIndexes = which(folds==i, arr.ind=TRUE)
+  train = shuffled[-testIndexes,]
+  test = shuffled[testIndexes,]
+  
+  # model
+
+  # train
+  logit <- glm(target ~ sex + cp + trestbps + thalach + exang + ca + thal, family=binomial(link='logit'), data=train)
+
+  summary(logit)
+  coef = coef(logit)
+  
+  # test 
+
+  # fitted.results <- predict(logit, newdata=test, type='response')
+  # fitted.results <- ifelse(fitted.results >0.5, 1, 0)
+  # pred = fitted.results
+  # actual = test$target
+  # result = data.frame(pred, actual)
+  # 
+  # misClassificError <- mean(fitted.results != test$target)
+  # print(paste('Accuracy', 1 - misClassificError))
+
+  # score the same training data set on which the model was fit
+  prob = predict.glm(logit, type = 'response', newdata = test)
+  pred = prediction(prob, test$target)
+  print(mean(pred))
+
+  # AUC
+  auc = performance(pred, "auc")@y.values[[1]][1]
+
+  # plot the ROC curve
+  perf <- performance(pred, "tpr", "fpr")
+  plot(perf, col="navyblue", cex.main=1,
+       main= paste("Logistic Regression ROC Curve: AUC =", round(auc,3)))
+  abline(a= 0, b = 1, col='darkorange1')
+  
+
+  # apply model to original data
+  prob1 = predict(logit, type='response', train)
+  pred1 = prediction(prob1, train$target)
+  auc1 = performance(pred1, "auc")@y.values[[1]][1]
+  CV[i, 1] = auc1
+
+  # apply model to bootstrap data
+  prob2 = predict(logit, type='response', test)
+  pred2 = prediction(prob2, test$target)
+  auc2 = performance(pred2, "auc")@y.values[[1]][1]
+  CV[i, 2] = auc2
+}
+
+avg_train_auc = sum(CV[,1])/k
+avg_test_auc = sum(CV[,2])/k
+
+(CV)
+(avg_train_auc)
+(avg_test_auc)
+```
+
+
