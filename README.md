@@ -1,2 +1,2 @@
-# comp-intensive-stat-method
+# Bootstrap Method
 STAT573 Computation Intensive Statistical Methods
