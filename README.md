@@ -1,2 +1,2 @@
 # Bootstrap Method
-STAT573 Computation Intensive Statistical Methods
+Final project for STAT573 Computation Intensive Statistical Methods
